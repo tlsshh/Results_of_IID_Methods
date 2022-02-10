@@ -80,35 +80,35 @@ count = 0.0
 whdr_sum =0.0
 
 for i in range(0 , 3):
-	img_list = images_list[i]
+    img_list = images_list[i]
 
-	for img_path in img_list:
+    for img_path in img_list:
 
-		judgement_path = root + "/IIW/iiw-dataset/data/" + img_path.split('/')[-1][0:-6] + 'json'
-		judgements = json.load(open(judgement_path))
+        judgement_path = root + "/IIW/iiw-dataset/data/" + img_path.split('/')[-1][0:-6] + 'json'
+        judgements = json.load(open(judgement_path))
 
-		pred_path = pred_dir + img_path.split('/')[-1]
+        pred_path = pred_dir + img_path.split('/')[-1]
 
-		print('pred_path', pred_path)
+        print('pred_path', pred_path)
 
-		hdf5_file_read = h5py.File(pred_path,'r')
-		pred_R = hdf5_file_read.get('/prediction/R')
-		pred_R = np.array(pred_R)
+        hdf5_file_read = h5py.File(pred_path,'r')
+        pred_R = hdf5_file_read.get('/prediction/R')
+        pred_R = np.array(pred_R)
 
-		pred_S = hdf5_file_read.get('/prediction/S')
-		pred_S = np.array(pred_S)
+        pred_S = hdf5_file_read.get('/prediction/S')
+        pred_S = np.array(pred_S)
 
-		hdf5_file_read.close()
+        hdf5_file_read.close()
 
-		# print(pred_R.shape)
-		# sys.exit()
+        # print(pred_R.shape)
+        # sys.exit()
 
-		whdr, whdr_eq, whdr_ineq = compute_whdr(pred_R, judgements)
-		whdr_sum += whdr
-		count+=1.0
-		whdr_mean =whdr_sum/count
+        whdr, whdr_eq, whdr_ineq = compute_whdr(pred_R, judgements)
+        whdr_sum += whdr
+        count+=1.0
+        whdr_mean =whdr_sum/count
 
-		print(whdr_mean)
+        print(whdr_mean)
 
 
 whdr_mean = whdr_sum/count
