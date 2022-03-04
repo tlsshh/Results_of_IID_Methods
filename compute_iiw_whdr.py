@@ -3,120 +3,119 @@ import pickle
 import sys
 import json
 import h5py
+import argparse
+import os
+from collections import namedtuple
 
-def compute_whdr(reflectance, judgements, delta=0.1):
-    points = judgements['intrinsic_points']
-    comparisons = judgements['intrinsic_comparisons']
-    id_to_points = {p['id']: p for p in points}
-    rows, cols = reflectance.shape[0:2]
-
-    error_sum = 0.0
-    error_equal_sum = 0.0
-    error_inequal_sum = 0.0
-
-    weight_sum = 0.0
-    weight_equal_sum = 0.0
-    weight_inequal_sum = 0.0
-
-    for c in comparisons:
-        # "darker" is "J_i" in our paper
-        darker = c['darker']
-        if darker not in ('1', '2', 'E'):
-            continue
-
-        # "darker_score" is "w_i" in our paper
-        weight = c['darker_score']
-        if weight <= 0.0 or weight is None:
-            continue
-
-        point1 = id_to_points[c['point1']]
-        point2 = id_to_points[c['point2']]
-        if not point1['opaque'] or not point2['opaque']:
-            continue
-
-        # convert to grayscale and threshold
-        l1 = max(1e-10, np.mean(reflectance[
-            int(point1['y'] * rows), int(point1['x'] * cols), ...]))
-        l2 = max(1e-10, np.mean(reflectance[
-            int(point2['y'] * rows), int(point2['x'] * cols), ...]))
-
-        # # convert algorithm value to the same units as human judgements
-        if l2 / l1 > 1.0 + delta:
-            alg_darker = '1'
-        elif l1 / l2 > 1.0 + delta:
-            alg_darker = '2'
-        else:
-            alg_darker = 'E'
-
-        if darker == 'E':  
-            if darker != alg_darker:
-                error_equal_sum += weight
-
-            weight_equal_sum += weight
-        else:
-            if darker != alg_darker:
-                error_inequal_sum += weight
-
-            weight_inequal_sum += weight
-
-        if darker != alg_darker:
-            error_sum += weight
-
-        weight_sum += weight
-
-    if weight_sum:
-        return (error_sum / weight_sum), error_equal_sum/( weight_equal_sum + 1e-10), error_inequal_sum/(weight_inequal_sum + 1e-10)
-    else:
-        return None
+from average_meter import AverageMeter
+from prediction_loader import *
+import metrics_iiw
 
 
-file_name = "./test_img_batch.p"
-pred_dir = './release_iiw/'
-images_list = pickle.load( open( file_name, "rb" ) )
+class WHDRAverageMeter(object):
+    Result = namedtuple("Result", ["WHDR", "WHDR_eq", "WHDR_ineq"])
 
-root = '/home/zl548/phoenix24/phoenix/S6/zl548/'
+    def __init__(self, name: str):
+        self.name = name
+        self.whdr_meter = AverageMeter("WHDR")
+        self.whdr_eq_meter = AverageMeter("WHDR_eq")
+        self.whdr_ineq_meter = AverageMeter("WHDR_ineq")
 
-count = 0.0
-whdr_sum =0.0
+    def update(self, whdr, whdr_eq, whdr_ineq, count, count_eq, count_ineq):
+        self.whdr_meter.update(whdr, count)
+        self.whdr_eq_meter.update(whdr_eq, count_eq)
+        self.whdr_ineq_meter.update(whdr_ineq, count_ineq)
 
-for i in range(0 , 3):
-    img_list = images_list[i]
+    def get_results(self):
+        return self.Result(WHDR=self.whdr_meter.avg, WHDR_eq=self.whdr_eq_meter.avg, WHDR_ineq=self.whdr_ineq_meter.avg)
 
-    for img_path in img_list:
-
-        judgement_path = root + "/IIW/iiw-dataset/data/" + img_path.split('/')[-1][0:-6] + 'json'
-        judgements = json.load(open(judgement_path))
-
-        pred_path = pred_dir + img_path.split('/')[-1]
-
-        print('pred_path', pred_path)
-
-        hdf5_file_read = h5py.File(pred_path,'r')
-        pred_R = hdf5_file_read.get('/prediction/R')
-        pred_R = np.array(pred_R)
-
-        pred_S = hdf5_file_read.get('/prediction/S')
-        pred_S = np.array(pred_S)
-
-        hdf5_file_read.close()
-
-        # print(pred_R.shape)
-        # sys.exit()
-
-        whdr, whdr_eq, whdr_ineq = compute_whdr(pred_R, judgements)
-        whdr_sum += whdr
-        count+=1.0
-        whdr_mean =whdr_sum/count
-
-        print(whdr_mean)
+    def __str__(self):
+        return f"WHDR {self.whdr_meter.avg: .6f}, " \
+               f"WHDR_eq {self.whdr_eq_meter.avg: .6f}, " \
+               f"WHDR_ineq {self.whdr_ineq_meter.avg: .6f}"
 
 
-whdr_mean = whdr_sum/count
+def evaluate_predictions(file_list_path, iiw_dir, eq_delta, loader: PredictionLoader):
+    images_list = pickle.load(open(file_list_path, "rb"))
 
-print('whdr_mean %f', whdr_mean)
+    # whdr_rgb_meter = WHDRAverageMeter("whdr_rgb")
+    whdr_srgb_meter = WHDRAverageMeter("whdr_srgb")
+    # count = 0.0
+    # whdr_sum =0.0
 
-sys.exit()
+    for j in range(0, 3):
+        img_list = images_list[j]
+        for i in range(len(img_list)):
+            img_path = img_list[i]
+            id = str(img_path.split('/')[-1][0:-7])
+            judgement_path = os.path.join(iiw_dir, "data", f"{id}.json")
+            judgements = json.load(open(judgement_path))
+
+            (whdr, _), (whdr_eq, valid_eq), (whdr_ineq, valid_ineq) = \
+                metrics_iiw.compute_whdr(loader.get_pred_r(id, "srgb"), judgements, eq_delta)
+            # whdr_sum += whdr
+            # count+=1.0
+            # whdr_mean =whdr_sum/count
+            # print(whdr_mean)
+            whdr_srgb_meter.update(whdr,    whdr_eq if valid_eq else 0, whdr_ineq if valid_ineq else 0,
+                                   1,       1 if valid_eq else 0,       1 if valid_ineq else 0)
+            if i%100 == 0:
+                print(f"Evaluate {j}-{i}: \n"
+                      # f"\tWHDR(rgb) {whdr_rgb_meter} \n"
+                      f"\tWHDR(srgb) {whdr_srgb_meter}")
+
+    # whdr_mean = whdr_sum/count
+    # print('whdr_mean %f', whdr_mean)
+    print(f"\nWHDR(srgb) {whdr_srgb_meter}")
 
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--file",
+        default="./iiw_test_img_batch.p",
+        metavar="FILE",
+        help="Path to test list file",
+        type=str,
+    )
+    parser.add_argument(
+        "--iiwdir",
+        default="./data/iiw-dataset",
+        metavar="FILE",
+        help="Path to test list file",
+        type=str,
+    )
+    parser.add_argument(
+        "--method",
+        default="Li_2018_full",
+        metavar="FILE",
+        help="Method to be evaluated",
+        type=str,
+    )
+    parser.add_argument(
+        "--t",
+        default=0.10,
+        metavar="Number",
+        help="Equality threshold",
+        type=float,
+    )
+
+    args = parser.parse_args()
+    print(f"\ntest list file path:{args.file} ")
+    print(f"IIW image directory: {args.iiwdir}")
+    for p in [args.file, args.iiwdir]:
+        if not os.path.exists(p):
+            print(f"Not exsists: {p}")
+            exit(0)
+
+    loader_dicts = {
+        "Li_2018_full": Li_2018_CGI_Loader("./Li_2018_CGIntrinsics/CGI+IIW+SAW/cgi_pred_iiw/release_iiw"),
+        "Li_2018_cgi": Li_2018_CGI_Loader("./Li_2018_CGIntrinsics/CGI/cgi_iiw/release_iiw_cgi")
+    }
+    if args.method not in loader_dicts.keys():
+        print(f"Undefined method: {args.method}")
+
+    print(f"\nEvaluate {args.method} with threshold: {args.t}")
+    evaluate_predictions(args.file, args.iiwdir, args.t, loader_dicts[args.method])
 
 
