@@ -6,6 +6,8 @@ import h5py
 import argparse
 import os
 from collections import namedtuple
+from skimage.transform import resize
+from skimage import io
 
 from average_meter import AverageMeter
 from prediction_loader import *
@@ -46,13 +48,20 @@ def evaluate_predictions(file_list_path, iiw_dir, eq_delta, loader: PredictionLo
     for j in range(0, 3):
         img_list = images_list[j]
         for i in range(len(img_list)):
-            img_path = img_list[i]
-            id = str(img_path.split('/')[-1][0:-7])
+            id = str(img_list[i].split('/')[-1][0:-7])
+            img_path = os.path.join(iiw_dir, "data", f"{id}.png")
             judgement_path = os.path.join(iiw_dir, "data", f"{id}.json")
             judgements = json.load(open(judgement_path))
 
-            (whdr, _), (whdr_eq, valid_eq), (whdr_ineq, valid_ineq) = \
-                metrics_iiw.compute_whdr(loader.get_pred_r(id, "srgb"), judgements, eq_delta)
+            img = np.float32(io.imread(img_path)) / 255.0
+            o_h, o_w = img.shape[0], img.shape[1]
+
+            pred_r = loader.get_pred_r(id, "srgb")
+            pred_r = resize(pred_r, (o_h, o_w),
+                            order=1, preserve_range=True, anti_aliasing=True)
+
+            (whdr, _), (whdr_eq, valid_eq), (whdr_ineq, valid_ineq) =\
+                metrics_iiw.compute_whdr(pred_r, judgements, eq_delta)
             # whdr_sum += whdr
             # count+=1.0
             # whdr_mean =whdr_sum/count
