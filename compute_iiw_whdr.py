@@ -118,9 +118,9 @@ if __name__ == '__main__':
             exit(0)
 
     loader_dicts = {
-        "Li_2018_full": Li_2018_CGI_Loader("./Li_2018_CGIntrinsics/CGI+IIW+SAW/cgi_pred_iiw/release_iiw"),
-        "Li_2018_cgi": Li_2018_CGI_Loader("./Li_2018_CGIntrinsics/CGI/cgi_iiw/release_iiw_cgi"),
-        "Luo_2020": Luo_2020_NIID_Net_Loader("./Luo_2020_NIID-Net/final_raw")
+        "Li_2018_full": Li_2018_CGI_Loader("./Li_2018_CGIntrinsics/CGI+IIW+SAW/cgi_iiw"),
+        "Li_2018_cgi": Li_2018_CGI_Loader("./Li_2018_CGIntrinsics/CGI/cgi_iiw"),
+        "Luo_2020": Luo_2020_NIID_Net_Loader("./Luo_2020_NIID-Net")
     }
     if args.method not in loader_dicts.keys():
         print(f"Undefined method: {args.method}")
