@@ -3,6 +3,8 @@ import os
 import h5py
 import numpy as np
 
+import util
+
 
 class PredictionLoader(ABC):
     @abstractmethod
@@ -24,4 +26,16 @@ class Li_2018_CGI_Loader(PredictionLoader):
         # pred_S = hdf5_file_read.get('/prediction/S')
         # pred_S = np.array(pred_S)
         hdf5_file_read.close()
+        return pred_R
+
+
+class Luo_2020_NIID_Net_Loader(PredictionLoader):
+    def __init__(self, dir):
+        self.dir = dir
+
+    def get_pred_r(self, id, space):
+        assert space in ["srgb"]
+        pred_R_path = os.path.join(self.dir, f"{id}-r.npy")
+        pred_R = np.load(pred_R_path).astype(np.float32)
+        pred_R = util.rgb_to_srgb(pred_R)
         return pred_R
