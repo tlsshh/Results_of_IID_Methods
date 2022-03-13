@@ -7,4 +7,8 @@ Luo_2020_NIID-Net/
 Wang_2019_Single Image Intrinsic Decomposition with Discriminative Feature Encoding/
 CRefNet/
 data/
+web/
+*.png
+*.jpg
+saw_decomps/methods
 __pycache__/
