@@ -4,6 +4,7 @@ from collections import namedtuple
 import os
 import pickle
 import shutil
+import multiprocessing
 
 import dominate
 from dominate import tags
@@ -84,28 +85,65 @@ class HTML:
                             with a(href=os.path.join('images', link)):
                                 img(width=width, height=int(width*hw_ratio), src=os.path.join('images', im))
 
-    def copy_image(self, subdir, src_img_path, compress_quality=100):
-        file, postfix = src_img_path.split('/')[-1].split('.')
-        file = file + ".jpg"
-        out_dir = os.path.join(self.img_dir, subdir)
-        if not os.path.exists(out_dir):
-            os.makedirs(out_dir)
-        out_img_path = os.path.join(out_dir, file)
-        src_img = cv2.imread(src_img_path, cv2.IMREAD_UNCHANGED)
-        if postfix in ["jpg", "jpeg"]:
-            shutil.copy(src_img_path, out_img_path)
-        else:
-            cv2.imwrite(out_img_path, src_img, [cv2.IMWRITE_JPEG_QUALITY, compress_quality])
-        img = cv2.imread(out_img_path)
-        h, w = img.shape[:2]
-        return os.path.join(os.path.join(subdir, file)), h / w
-
     def save(self):
         """save the current content to the HMTL file"""
         html_file = '%s/index.html' % self.web_dir
         f = open(html_file, 'wt')
         f.write(self.doc.render())
         f.close()
+
+
+class CopyImages(object):
+    def __init__(self, method_list, index_list, dst_dir, rel_dir, skip_exist=False, compress_quality=100):
+        self.method_list = method_list
+        self.index_list = index_list
+        self.dst_dir = dst_dir
+        self.rel_dir = rel_dir
+        self.dst_postfix = "jpg"
+        self.compress_quality = compress_quality
+        self.skip_exist = skip_exist
+
+    def _copy_single_image(self, src_img_path, subdir, postfix):
+        assert postfix in ["jpg", "jpeg"]
+        file, o_postfix = src_img_path.split('/')[-1].split('.')
+        file_name = f"{file}.{postfix}"
+        out_dir = os.path.join(self.dst_dir, subdir)
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+        out_img_path = os.path.join(out_dir, file_name)
+        if not self.skip_exist or not os.path.exists(out_img_path):
+            if o_postfix == postfix:
+                shutil.copy(src_img_path, out_img_path)
+            else:
+                src_img = cv2.imread(src_img_path, cv2.IMREAD_UNCHANGED)
+                cv2.imwrite(out_img_path, src_img, [cv2.IMWRITE_JPEG_QUALITY, self.compress_quality])
+        # img = cv2.imread(out_img_path)
+        # h, w = img.shape[:2]
+        # return os.path.join(os.path.join(subdir, file)), h / w
+
+    def copy_images_from_method(self, m_idx):
+        m = self.method_list[m_idx]
+        for id in self.index_list:
+            r_path, s_path = m.image_loader.get_pred_rs_img_path(id)
+            for p in [r_path, s_path]:
+                self._copy_single_image(p, m.title, self.dst_postfix)
+        m.image_loader.set_img_dir(os.path.join(self.rel_dir, m.title), self.dst_postfix)
+
+    def copy_images_from_input_loader(self, loader: InputLoader, subdir):
+        for id in self.index_list:
+            img_path = loader.get_input_img_path(id)
+            self._copy_single_image(img_path, subdir, self.dst_postfix)
+        loader.set_img_dir(os.path.join(self.rel_dir, subdir), self.dst_postfix)
+        return loader
+
+    def run_copy_method_images(self, num_workers):
+        print(f"Multiple threads: {num_workers}")
+        with multiprocessing.Pool(processes=num_workers) as pool:
+            cnt = 0
+            for index in pool.imap_unordered(self.copy_images_from_method, range(len(self.method_list))):
+                cnt += 1
+                print(f"Finish: {cnt}/{len(self.method_list)}")
+        return self.method_list
 
 
 def writing_table(input_loader, index_list, method_list):
@@ -175,14 +213,15 @@ if __name__ == '__main__':  # we show an example usage here.
                               image_loader=General_Loader("./saw_decomps/methods/zhao2012_nonlocal-709")))
     method_list.append(Method(title="Zhou et al.",
                               image_loader=General_Loader("./saw_decomps/methods/zhou2015_reflprior-1281")))
-
+    # Input loader
+    input_loader = InputLoader("./data/iiw-dataset")
 
     # Sampled image index
     test_list_file_path = "./iiw_test_img_batch.p"
     images_list = pickle.load(open(test_list_file_path, "rb"))
     index_list = []
     for i in range(3):
-        for j in range(0, len(images_list[i]), 12):
+        for j in range(0, len(images_list[i]), 10):
             id = str(images_list[i][j].split('/')[-1][0:-7])
             index_list.append(id)
     exclude_list = [
@@ -194,6 +233,15 @@ if __name__ == '__main__':  # we show an example usage here.
     for idx in exclude_list:
         if str(idx) in index_list:
             index_list.remove(str(idx))
+
+    # Copy images
+    html_dir = "./web"
+    image_rel_dir = "images"
+    html_images_dir = os.path.join(html_dir, image_rel_dir)
+    c = CopyImages(method_list, index_list, html_images_dir, image_rel_dir, skip_exist=True, compress_quality=90)
+    method_list = c.run_copy_method_images(8)
+    input_loader = c.copy_images_from_input_loader(input_loader, "Input")
+
     # index_list = index_list[:15]
-    writing_table(InputLoader(os.path.join(project_dir, "data/iiw-dataset")), index_list, method_list)
+    # writing_table(InputLoader("./data/iiw-dataset"), index_list, method_list, False)
 
