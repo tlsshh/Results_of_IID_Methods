@@ -14,7 +14,7 @@ import cv2
 from prediction_loader import *
 
 
-Method = namedtuple("Method", ["title", "image_loader"])
+Method = namedtuple("Method", ["title", "subdir", "image_loader"])
 
 
 class HTML:
@@ -35,11 +35,11 @@ class HTML:
         """
         self.title = title
         self.web_dir = web_dir
-        self.img_dir = os.path.join(self.web_dir, 'images')
+        # self.img_dir = os.path.join(self.web_dir, 'images')
         if not os.path.exists(self.web_dir):
             os.makedirs(self.web_dir)
-        if not os.path.exists(self.img_dir):
-            os.makedirs(self.img_dir)
+        # if not os.path.exists(self.img_dir):
+        #     os.makedirs(self.img_dir)
 
         self.doc = dominate.document(title=title)
         if refresh > 0:
@@ -53,9 +53,9 @@ class HTML:
             col(width=f"{width}px")
         return t
 
-    def get_image_dir(self):
-        """Return the directory that stores images"""
-        return self.img_dir
+    # def get_image_dir(self):
+    #     """Return the directory that stores images"""
+    #     return self.img_dir
 
     def add_header(self, text):
         """Insert a header to the HTML file
@@ -65,6 +65,10 @@ class HTML:
         """
         with self.doc:
             h3(text)
+
+    def add_text(self, text):
+        with self.doc:
+            tags.p(text)
 
     def add_images(self, t, ims, txts, links, widths, hw_ratio):
         """add images to the HTML file
@@ -82,8 +86,8 @@ class HTML:
                             tags.p(txt)
                             # br()
                         if im is not None:
-                            with a(href=os.path.join('images', link)):
-                                img(width=width, height=int(width*hw_ratio), src=os.path.join('images', im))
+                            with a(href=link):
+                                img(width=width, height=int(width*hw_ratio), src=im)
 
     def save(self):
         """save the current content to the HMTL file"""
@@ -126,8 +130,10 @@ class CopyImages(object):
         for id in self.index_list:
             r_path, s_path = m.image_loader.get_pred_rs_img_path(id)
             for p in [r_path, s_path]:
-                self._copy_single_image(p, m.title, self.dst_postfix)
-        m.image_loader.set_img_dir(os.path.join(self.rel_dir, m.title), self.dst_postfix)
+                self._copy_single_image(p, m.subdir, self.dst_postfix)
+        m.image_loader.set_img_dir(os.path.join(self.rel_dir, m.subdir), self.dst_postfix)
+        return m_idx, m
+        # print("copy", m.image_loader.image_dir, self.method_list[m_idx].image_loader.image_dir)
 
     def copy_images_from_input_loader(self, loader: InputLoader, subdir):
         for id in self.index_list:
@@ -140,17 +146,17 @@ class CopyImages(object):
         print(f"Multiple threads: {num_workers}")
         with multiprocessing.Pool(processes=num_workers) as pool:
             cnt = 0
-            for index in pool.imap_unordered(self.copy_images_from_method, range(len(self.method_list))):
+            for index, m in pool.imap_unordered(self.copy_images_from_method, range(len(self.method_list))):
+                self.method_list[index] = m
                 cnt += 1
                 print(f"Finish: {cnt}/{len(self.method_list)}")
+        # for m in self.method_list:
+        #     print("run", m.image_loader.image_dir)
         return self.method_list
 
 
-def writing_table(input_loader, index_list, method_list):
+def writing_table(html, input_loader, index_list, method_list):
     print(f"Total samples: {len(index_list)}")
-
-    html = HTML('web/', 'intrinsic_images_html')
-    html.add_header('Intrinsic Image Decomposition')
 
     text_width = 50
     img_width = 200
@@ -166,15 +172,19 @@ def writing_table(input_loader, index_list, method_list):
     # add image
     for i in range(len(index_list)):
         # print header
-        if i % 5 == 0:
+        if i % 4 == 0:
             html.add_images(tab, [None]*len(header), header, [None]*len(header), column_widths, 1)
         id = index_list[i]
-        # reflectance
-        input_path, hw_ratio = html.copy_image("Input", input_loader.get_input_img_path(id), compress_quality=90)
+        # input image + reflectance
+        input_path = input_loader.get_input_img_path(id)
+        full_input_path = os.path.join(html.web_dir, input_path)
+        input_img = cv2.imread(full_input_path, cv2.IMREAD_UNCHANGED)
+        print(full_input_path)
+        hw_ratio = input_img.shape[0] / input_img.shape[1]
         ims = [None, input_path]
         txts = [id, None]
         for m in method_list:
-            img_path, _ = html.copy_image(m.title, m.image_loader.get_pred_rs_img_path(id)[0], compress_quality=95)
+            img_path = m.image_loader.get_pred_rs_img_path(id)[0]
             ims.append(img_path)
             txts.append(None)
         html.add_images(tab, ims, txts, ims, column_widths, hw_ratio)
@@ -182,36 +192,47 @@ def writing_table(input_loader, index_list, method_list):
         ims = [None, None]
         txts = [None, None]
         for m in method_list:
-            img_path, _ = html.copy_image(m.title, m.image_loader.get_pred_rs_img_path(id)[1])
+            img_path = m.image_loader.get_pred_rs_img_path(id)[1]
             ims.append(img_path)
             txts.append(None)
         html.add_images(tab, ims, txts, ims, column_widths, hw_ratio)
-        print(f"{i}/{len(index_list)}")
+        # print(f"{i}/{len(index_list)}")
     html.save()
+    print("Finish writing table.")
 
 
 if __name__ == '__main__':  # we show an example usage here.
     # Methods
     method_list = []
     method_list.append(Method(title="CRefNet (ours)",
+                              subdir="crefnet",
                               image_loader=CRefNet("./CRefNet/final_CGI+IIW")))
-    method_list.append(Method(title="Wang & Lu",
+    method_list.append(Method(title="Wang & Lu 2019",
+                              subdir="wang_lu_2019",
                               image_loader=Wang_2019_Discriminative_Loader("./Wang_2019_Single Image Intrinsic Decomposition with Discriminative Feature Encoding")))
-    method_list.append(Method(title="NIID-Net",
+    method_list.append(Method(title="Luo et al. 2020",
+                              subdir="luo_2020",
                               image_loader=Luo_2020_NIID_Net_Loader("./Luo_2020_NIID-Net")))
-    method_list.append(Method(title="Li & Snavely",
+    method_list.append(Method(title="Li & Snavely 2018",
+                              subdir="li_snavely_2018",
                               image_loader=Li_2018_CGI_Loader("./Li_2018_CGIntrinsics/CGI+IIW+SAW/cgi_iiw")))
-    method_list.append(Method(title="Bi et al.",
+    method_list.append(Method(title="Bi et al. 2015",
+                              subdir="bi_2015",
                               image_loader=Bi_2015_L1smoothing_Loader("./Bi_2015_An L1 image transform for edge-preserving smoothing and scene-level intrinsic decomposition")))
-    method_list.append(Method(title="Bell et al.",
+    method_list.append(Method(title="Bell et al. 2014",
+                              subdir="bell_2014",
                               image_loader=General_Loader("./saw_decomps/methods/bell2014_densecrf-1141")))
-    method_list.append(Method(title="Garces et al.",
+    method_list.append(Method(title="Garces et al. 2012",
+                              subdir="garces_2012",
                               image_loader=General_Loader("./saw_decomps/methods/garces2012_clustering-1221")))
-    method_list.append(Method(title="Retinex (color)",
+    method_list.append(Method(title="Grosse et al. 2009",
+                              subdir="grosse_2009",
                               image_loader=General_Loader("./saw_decomps/methods/grosse2009_color_retinex-633")))
-    method_list.append(Method(title="Zhao et al.",
+    method_list.append(Method(title="Zhao et al. 2012",
+                              subdir="zhao_2012",
                               image_loader=General_Loader("./saw_decomps/methods/zhao2012_nonlocal-709")))
-    method_list.append(Method(title="Zhou et al.",
+    method_list.append(Method(title="Zhou et al. 2015",
+                              subdir="zhou_2015",
                               image_loader=General_Loader("./saw_decomps/methods/zhou2015_reflprior-1281")))
     # Input loader
     input_loader = InputLoader("./data/iiw-dataset")
@@ -220,14 +241,18 @@ if __name__ == '__main__':  # we show an example usage here.
     test_list_file_path = "./iiw_test_img_batch.p"
     images_list = pickle.load(open(test_list_file_path, "rb"))
     index_list = []
+    sample_interv = 5
     for i in range(3):
-        for j in range(0, len(images_list[i]), 10):
+        for j in range(0, len(images_list[i]), sample_interv):
             id = str(images_list[i][j].split('/')[-1][0:-7])
             index_list.append(id)
     exclude_list = [
         80141, 113958, 89092, 86288, 83086, 113930, 74872, 85322, 69646, 11389, 105065,
         90699, 71954, 89055, 77273, 113806, 66513, 116535,
         64988, 34280, 116303, 114369, 88001, 116625, 91762, 104333, 70179, 56804, 65639, 67662,
+        69896, 67912, 82969, 57082, 113601, 115374, 105924, 114704, 77548,
+        115560, 23021, 68023,
+        78837, 65500, 109934, 65252, 57242, 75235,
         18680, 101315, 16129, 22351  #toilet
     ]  # with people
     for idx in exclude_list:
@@ -235,13 +260,20 @@ if __name__ == '__main__':  # we show an example usage here.
             index_list.remove(str(idx))
 
     # Copy images
-    html_dir = "./web"
-    image_rel_dir = "images"
+    # html_dir = "./web"
+    html_dir = "experiments/faster/refine_on_the_IIW/web"
+    image_rel_dir = "./images"
     html_images_dir = os.path.join(html_dir, image_rel_dir)
     c = CopyImages(method_list, index_list, html_images_dir, image_rel_dir, skip_exist=True, compress_quality=90)
-    method_list = c.run_copy_method_images(8)
-    input_loader = c.copy_images_from_input_loader(input_loader, "Input")
+    method_list = c.run_copy_method_images(4)
+    input_loader = c.copy_images_from_input_loader(input_loader, "input")
 
-    # index_list = index_list[:15]
-    # writing_table(InputLoader("./data/iiw-dataset"), index_list, method_list, False)
+    # Writing html table
+    html = HTML(html_dir, 'intrinsic_images_html')
+    html.add_header('Intrinsic Image Decomposition')
+    html.add_text("We recommend viewing this HTML file using the Chrome browser.")
+    html.add_text(f"Visual comparison between our CRefNet and previous methods. "
+                  f"We show the first of every {sample_interv} consecutive images on the test split file provided by Li and Snavely (2018). "
+                  f"For each sample, reflectance (top) and shading (below) images are presented.")
+    writing_table(html, input_loader, index_list, method_list)
 
