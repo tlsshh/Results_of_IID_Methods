@@ -6,6 +6,12 @@ from prediction_loader import *
 from html import Method, CopyImages, HTML, writing_table
 
 
+def read_id_from_file(file_path):
+    with open(file_path) as f:
+        id_list = f.readlines()
+    id_list = [i.strip() for i in id_list]
+    return id_list
+
 if __name__ == '__main__':  # we show an example usage here.
     # Methods
     method_list = []
