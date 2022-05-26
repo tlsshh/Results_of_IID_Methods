@@ -8,7 +8,7 @@ import multiprocessing
 
 import dominate
 from dominate import tags
-from dominate.tags import meta, h3, tr, td, a, img, br, col
+from dominate.tags import meta, h2, tr, td, a, img, br, col, style
 import cv2
 
 from prediction_loader import *
@@ -64,7 +64,7 @@ class HTML:
             text (str) -- the header text
         """
         with self.doc:
-            h3(text)
+            h2(text)
 
     def add_text(self, text):
         with self.doc:
@@ -88,6 +88,24 @@ class HTML:
                         if im is not None:
                             with a(href=link):
                                 img(width=width, height=int(width*hw_ratio), src=im)
+
+    def set_style(self):
+        with self.doc.head:
+            style("""\
+             body { 
+                 font-family: system-ui, 
+                 -apple-system, 
+                 BlinkMacSystemFont, 
+                 "Segoe UI", 
+                 Roboto, 
+                 Ubuntu, 
+                 "Helvetica Neue", 
+                 Oxygen, 
+                 Cantarell, 
+                 sans-serif; 
+             }
+                 
+             """)
 
     def save(self):
         """save the current content to the HMTL file"""
@@ -156,7 +174,7 @@ class CopyImages(object):
 
 
 def writing_table(html, input_loader, index_list, method_list):
-    print(f"Total samples: {len(index_list)}")
+    print(f"\nTotal samples: {len(index_list)}")
 
     text_width = 50
     img_width = 200
@@ -206,7 +224,7 @@ if __name__ == '__main__':  # we show an example usage here.
     method_list = []
     method_list.append(Method(title="CRefNet (ours)",
                               subdir="crefnet",
-                              image_loader=CRefNet("./CRefNet/final_CGI+IIW")))
+                              image_loader=CRefNet("experiments/results_NeurIPS2022/CGI+IIW/visualization/test_with_final_w_RGF_w_RR/IIW")))
     method_list.append(Method(title="Wang & Lu 2019",
                               subdir="wang_lu_2019",
                               image_loader=Wang_2019_Discriminative_Loader("./Wang_2019_Single Image Intrinsic Decomposition with Discriminative Feature Encoding")))
@@ -234,6 +252,8 @@ if __name__ == '__main__':  # we show an example usage here.
     method_list.append(Method(title="Zhou et al. 2015",
                               subdir="zhou_2015",
                               image_loader=General_Loader("./saw_decomps/methods/zhou2015_reflprior-1281")))
+
+
     # Input loader
     input_loader = InputLoader("./data/iiw-dataset")
 
@@ -241,7 +261,7 @@ if __name__ == '__main__':  # we show an example usage here.
     test_list_file_path = "./iiw_test_img_batch.p"
     images_list = pickle.load(open(test_list_file_path, "rb"))
     index_list = []
-    sample_interv = 5
+    sample_interv = 8
     for i in range(3):
         for j in range(0, len(images_list[i]), sample_interv):
             id = str(images_list[i][j].split('/')[-1][0:-7])
@@ -260,8 +280,7 @@ if __name__ == '__main__':  # we show an example usage here.
             index_list.remove(str(idx))
 
     # Copy images
-    # html_dir = "./web"
-    html_dir = "experiments/faster/refine_on_the_IIW/web"
+    html_dir = "experiments/NeurIPS2022_supp_web"
     image_rel_dir = "./images"
     html_images_dir = os.path.join(html_dir, image_rel_dir)
     c = CopyImages(method_list, index_list, html_images_dir, image_rel_dir, skip_exist=True, compress_quality=90)
@@ -269,11 +288,13 @@ if __name__ == '__main__':  # we show an example usage here.
     input_loader = c.copy_images_from_input_loader(input_loader, "input")
 
     # Writing html table
-    html = HTML(html_dir, 'intrinsic_images_html')
-    html.add_header('Intrinsic Image Decomposition')
-    html.add_text("We recommend viewing this HTML file using the Chrome browser.")
-    html.add_text(f"Visual comparison between our CRefNet and previous methods. "
-                  f"We show the first of every {sample_interv} consecutive images on the test split file provided by Li and Snavely (2018). "
-                  f"For each sample, reflectance (top) and shading (below) images are presented.")
+    html = HTML(html_dir, 'CRefNet: Supplemental Results')
+    html.add_header("CRefNet: Learning Consistent Reflectance Estimation with a Decoder-sharing Transformer")
+    html.set_style()
+    html.add_text("We recommend viewing this HTML file using the Chrome browser as Safari may not always show all images.")
+    html.add_text(f"Visual comparison between our CRefNet and previous methods. We show every {sample_interv}th image of the test split "
+                  f"file provided by Li and Snavely (2018). For each sample, we show reflectance (top) and shading (below) "
+                  f"images.")
+    html.add_text("Please note that our estimated reflectance is the most consistent in most cases.")
     writing_table(html, input_loader, index_list, method_list)
 
